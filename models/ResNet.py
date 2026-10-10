@@ -75,34 +75,42 @@ class Bottleneck(nn.Module):
         return out
 
 class ResNet(nn.Module):
-    # 所有网络都是通过这个类产生的，只要传入不同的参数即可
-    def __init__(self, block, layers, color=0, num_classes=10):
-        self.inplanes = 64
+    def __init__(self, block, layers, color=0, num_classes=10,
+                 zero_init_residual=False):
         super(ResNet, self).__init__()
-        if color == 0:
-            channels = 1
-        else:
-            channels = 3
-        self.conv1 = nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
+        self.inplanes = 64
+        channels = 1 if color == 0 else 3
+
+        self.conv1 = nn.Conv2d(channels, 64, kernel_size=7, stride=2,
+                               padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
+
+        self.layer1 = self._make_layer(block, 64,  layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.avgpool = nn.AvgPool2d(7, stride=1)
+
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_out',
+                                        nonlinearity='relu')
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, Bottleneck) and m.bn3.weight is not None:
+                    nn.init.constant_(m.bn3.weight, 0)
+                elif isinstance(m, BasicBlock) and m.bn2.weight is not None:
+                    nn.init.constant_(m.bn2.weight, 0)
 
+    # ↓↓↓ 这个方法必须有！ ↓↓↓
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -115,10 +123,11 @@ class ResNet(nn.Module):
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
         self.inplanes = planes * block.expansion
-        for i in range(1, blocks):
+        for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
         return nn.Sequential(*layers)
+    # ↑↑↑ 这个方法必须有！ ↑↑↑
 
     def forward(self, x):
         x = self.conv1(x)
@@ -130,31 +139,26 @@ class ResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
 
+        x = self.avgpool(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.fc(x)
         return x
 
-def ResNet18(color=1, num_classes=2):
-    model = ResNet(BasicBlock, [2,2,2,2], color, num_classes)
-    return model
+def ResNet18(color=1, num_classes=2, **kwargs):
+    return ResNet(BasicBlock, [2, 2, 2, 2], color, num_classes, **kwargs)
 
-def ResNet34(color=1, num_classes=2):
-    model = ResNet(BasicBlock, [3, 4, 6, 3], color, num_classes)
-    return model
+def ResNet34(color=1, num_classes=2, **kwargs):
+    return ResNet(BasicBlock, [3, 4, 6, 3], color, num_classes, **kwargs)
 
-def ResNet50(color=1, num_classes=2):
-    model = ResNet(Bottleneck, [3, 4, 6, 3], color, num_classes)
-    return model
+def ResNet50(color=1, num_classes=2, **kwargs):
+    return ResNet(Bottleneck, [3, 4, 6, 3], color, num_classes, **kwargs)
 
-def ResNet101(color=1, num_classes=2):
-    model = ResNet(Bottleneck, [3, 4, 23, 3], color, num_classes)
-    return model
+def ResNet101(color=1, num_classes=2, **kwargs):
+    return ResNet(Bottleneck, [3, 4, 23, 3], color, num_classes, **kwargs)
 
-def ResNet152(color=1, num_classes=2):
-    model = ResNet(Bottleneck, [3, 8, 36, 3], color, num_classes)
-    return model
+def ResNet152(color=1, num_classes=2, **kwargs):
+    return ResNet(Bottleneck, [3, 8, 36, 3], color, num_classes, **kwargs)
 
 
 

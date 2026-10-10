@@ -1,15 +1,15 @@
 #训练验证测试集路径下里存需要训练的文件夹（比如cat, dog）cat文件夹下放着所有cat类别的文件，dog也一样
-train: ./data/train
-val: ./data/val
-test: ./data/test
+train: ./data/train.txt
+val: ./data/train.txt
+test: ./data/train.txt
 
 #VGG11 VGG13 VGG16 VGG19 
 #ResNet18 ResNet34 ResNet50 ResNet101 ResNet152
-model: ResNet50
+model: ResNet18
 
 color: 0                        #0 gray   1 RGB
 
 classes:
-  cat: 0
-  dog: 1
-  person: 2
+  JAPAN: 0
+  JWAWA: 1
+  MAL: 2
