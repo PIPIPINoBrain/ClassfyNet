@@ -1,0 +1,4 @@
+F:\Datasets\Project\WeldingDefects\Classfy\RT_DR_Small\RT\Positive\00000956.png dog painting
+F:\Datasets\Project\WeldingDefects\Classfy\RT_DR_Small\Small\Positive\00000977.png person photo
+F:\Datasets\Project\WeldingDefects\Classfy\RT_DR_Small\Small\Negative\00001435.png cat photo
+F:\Datasets\Project\WeldingDefects\Classfy\RT_DR_Small\Small\Negative\00000911.png person painting

@@ -6,15 +6,13 @@ import torch
 def parse_shape(s):
     """
     解析 "1,3,224,224" / "1 3 224 224" / "(1,3,224,224)" 为 (1,3,224,224)
-    也兼容 tuple / list
     """
     if isinstance(s, (tuple, list)):
         return tuple(int(x) for x in s)
     s = s.strip().strip("()")
     for sep in (",", " "):
         if sep in s:
-            parts = [p for p in s.split(sep) if p != ""]
-            return tuple(int(p) for p in parts)
+            return tuple(int(p) for p in s.split(sep) if p != "")
     return (int(s),)
 
 
@@ -25,10 +23,10 @@ if __name__ == '__main__':
                         help='Path to the PyTorch model file (full model object)')
     parser.add_argument("--input_size", default="1,1,224,224", type=str,
                         help='Input size, e.g. "1,1,224,224"')
-    parser.add_argument("--device", default='cpu', type=str,
-                        help='Device to use for inference (cuda or cpu)')
     parser.add_argument("--output", default=None, type=str,
                         help='Output ONNX path; default: same dir/name as weight')
+    parser.add_argument("--device", default='cpu', type=str,
+                        help='Device to use (cuda or cpu)')
     parser.add_argument("--onnx_version", default=12, type=int,
                         help='ONNX opset version (default 12)')
     parser.add_argument("--dynamic", action='store_true',
@@ -61,19 +59,30 @@ if __name__ == '__main__':
 
     if not isinstance(obj, torch.nn.Module):
         raise ValueError(
-            f"{args.weight} 不是完整模型对象，无法直接导出。"
-            f"请用 torch.save(model) 保存整模型。")
+            f"{args.weight} 不是完整模型对象。"
+            f"请确保 train.py 用 torch.save(model) 保存整模型。")
 
     model = obj.to(device).eval()
+
+    # ---------- 推断任务数（多任务模型）/ 输出名 ----------
+    # MultiTaskModel 有 .heads 属性；单输出模型没有
+    if hasattr(model, 'heads'):
+        num_outputs = len(model.heads)
+        output_names = [f"output{i}" for i in range(num_outputs)]
+    else:
+        num_outputs = 1
+        output_names = ["output0"]
+
+    print(f"模型输出数: {num_outputs}，输出名: {output_names}")
 
     # ---------- 构造 dummy input ----------
     input_tensor = torch.randn(*input_size, device=device)
 
-    # ---------- 输出路径 ----------
+    # ---------- 输出路径（这就是之前缺失的那段） ----------
     if args.output:
         output_path = args.output
     else:
-        base = os.path.splitext(args.weight)[0]      # 只切最后一个后缀
+        base = os.path.splitext(args.weight)[0]
         output_path = base + ".onnx"
     os.makedirs(os.path.dirname(os.path.abspath(output_path)),
                 exist_ok=True)
@@ -82,9 +91,10 @@ if __name__ == '__main__':
     dynamic_axes = None
     if args.dynamic:
         dynamic_axes = {
-            "input0":  {0: "batch_size", 2: "height", 3: "width"},
-            "output0": {0: "batch_size"},
+            "input0": {0: "batch_size", 2: "height", 3: "width"},
         }
+        for name in output_names:
+            dynamic_axes[name] = {0: "batch_size"}
 
     # ---------- 导出 ----------
     with torch.inference_mode():
@@ -93,7 +103,7 @@ if __name__ == '__main__':
             input_tensor,
             output_path,
             input_names=["input0"],
-            output_names=["output0"],
+            output_names=output_names,
             opset_version=args.onnx_version,
             dynamic_axes=dynamic_axes,
             do_constant_folding=args.constant_folding,

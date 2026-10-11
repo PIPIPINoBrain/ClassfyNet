@@ -1,5 +1,6 @@
 from models.ResNet import *
 from models.VGGNet import *
+from models.MultiTaskModel import build_multitask_backbone
 
 
 _SUPPORTED = {
@@ -8,9 +9,14 @@ _SUPPORTED = {
 }
 
 
-def LoadModel(modelname, color, numclasses, zero_init_residual=False):
+def LoadModel(modelname, color, num_classes_per_task):
     """
-    zero_init_residual 只对 ResNet 生效，VGG 会忽略。
+    根据模型名 + 每任务类别数，构建多任务模型。
+
+    Args:
+        modelname: 模型名
+        color:     0 灰度 / 1 RGB
+        num_classes_per_task: list[int]，单任务时是 [N]
     """
     if modelname not in _SUPPORTED:
         raise ValueError(
@@ -18,29 +24,4 @@ def LoadModel(modelname, color, numclasses, zero_init_residual=False):
             f"Supported: {sorted(_SUPPORTED)}"
         )
 
-    # ---------------- VGG ----------------
-    if modelname == "VGG11":
-        return VGG11(color=color, num_classes=numclasses, init_weights=False)
-    elif modelname == "VGG13":
-        return VGG13(color=color, num_classes=numclasses, init_weights=False)
-    elif modelname == "VGG16":
-        return VGG16(color=color, num_classes=numclasses, init_weights=False)
-    elif modelname == "VGG19":
-        return VGG19(color=color, num_classes=numclasses, init_weights=False)
-
-    # ---------------- ResNet ----------------
-    elif modelname == "ResNet18":
-        return ResNet18(color=color, num_classes=numclasses,
-                        zero_init_residual=zero_init_residual)
-    elif modelname == "ResNet34":
-        return ResNet34(color=color, num_classes=numclasses,
-                        zero_init_residual=zero_init_residual)
-    elif modelname == "ResNet50":
-        return ResNet50(color=color, num_classes=numclasses,
-                        zero_init_residual=zero_init_residual)
-    elif modelname == "ResNet101":
-        return ResNet101(color=color, num_classes=numclasses,
-                         zero_init_residual=zero_init_residual)
-    elif modelname == "ResNet152":
-        return ResNet152(color=color, num_classes=numclasses,
-                         zero_init_residual=zero_init_residual)
+    return build_multitask_backbone(modelname, color, num_classes_per_task)

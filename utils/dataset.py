@@ -1,41 +1,46 @@
 import os
 import cv2
 import numpy as np
-import yaml
+import torch
 from torch.utils import data
 
 
 class DatasetLoader(data.Dataset):
-    def __init__(self, txt_path, classes, imgsize, color=0):
+    def __init__(self, txt_path, tasks, imgsize, color=0):
         """
         Args:
-            txt_path: 数据集描述文件，每行 "<图像路径> <类别名>"
-            classes:  dict, {类别名: label}，例如 {'JAPAN':0, 'JWAWA':1, 'MAL':2}
+            txt_path: 数据集描述文件，每行 "<路径> <类别1> <类别2> ..."
+            tasks:    dict[task_name -> dict[class_name -> label]]
+                      单任务时 len(tasks) == 1
             imgsize:  [H, W]
             color:    0 -> 灰度(1通道)，1 -> RGB(3通道)
         """
         self.txt_path = txt_path
-        self.classes = classes
+        self.tasks = tasks
+        self.task_names = list(tasks.keys())           # 保序
+        self.num_tasks = len(self.task_names)
+        self.num_classes_per_task = [len(tasks[t]) for t in self.task_names]
+
         self.H = imgsize[0]
         self.W = imgsize[1]
         self.color = color
 
         self.images = []
-        self.labels = []
+        self.labels = []                                # list[list[int]]
         self.checklist = self._load_txt(txt_path)
 
         print(f"Datasets checked completed: {txt_path}")
-        for key in self.checklist.keys():
-            print(f"  {key}: {self.checklist[key]}")
+        for t_name in self.task_names:
+            print(f"  [{t_name}] {self.checklist[t_name]}")
         print()
 
     # -------------------------------------------------------------
     def _load_txt(self, txt_path):
-        """逐行解析 txt，返回每个类别的样本数统计。"""
         if not os.path.isfile(txt_path):
             raise FileNotFoundError(f"数据集描述文件不存在：{txt_path}")
 
-        checklist = {name: 0 for name in self.classes.keys()}
+        checklist = {t: {c: 0 for c in self.tasks[t].keys()}
+                     for t in self.task_names}
 
         with open(txt_path, 'r', encoding='utf-8') as f:
             for lineno, line in enumerate(f, 1):
@@ -43,30 +48,36 @@ class DatasetLoader(data.Dataset):
                 if not line or line.startswith('#'):
                     continue
 
-                # 从右侧分割一次：左边可能是带空格的路径，右边是类别名
-                parts = line.rsplit(maxsplit=1)
-                if len(parts) != 2:
+                parts = line.rsplit(maxsplit=self.num_tasks)
+                if len(parts) != self.num_tasks + 1:
                     raise ValueError(
                         f"{txt_path} 第 {lineno} 行格式错误：'{line}'，"
-                        f"应为 '<图像路径> <类别名>'"
+                        f"应为 '<路径> " +
+                        " ".join(f"<{t}>" for t in self.task_names) + "'"
                     )
 
-                img_path, class_name = parts
-
-                if class_name not in self.classes:
-                    raise ValueError(
-                        f"{txt_path} 第 {lineno} 行类别名 '{class_name}' "
-                        f"不在 classes 中，合法类别：{list(self.classes.keys())}"
-                    )
+                img_path = parts[0]
+                class_names = parts[1:]
 
                 if not os.path.isfile(img_path):
                     raise FileNotFoundError(
                         f"{txt_path} 第 {lineno} 行图像不存在：{img_path}"
                     )
 
+                labels = []
+                for t_idx, t_name in enumerate(self.task_names):
+                    cname = class_names[t_idx]
+                    if cname not in self.tasks[t_name]:
+                        raise ValueError(
+                            f"{txt_path} 第 {lineno} 行任务 '{t_name}' 的类别 "
+                            f"'{cname}' 不在 yaml 中，"
+                            f"合法类别：{list(self.tasks[t_name].keys())}"
+                        )
+                    labels.append(self.tasks[t_name][cname])
+                    checklist[t_name][cname] += 1
+
                 self.images.append(img_path)
-                self.labels.append(self.classes[class_name])
-                checklist[class_name] += 1
+                self.labels.append(labels)
 
         if len(self.images) == 0:
             raise RuntimeError(f"{txt_path} 中没有任何有效样本")
@@ -81,7 +92,7 @@ class DatasetLoader(data.Dataset):
     # -------------------------------------------------------------
     def __getitem__(self, i):
         img_p = self.images[i]
-        label = self.labels[i]
+        labels = self.labels[i]
 
         data = cv2.imread(img_p, self.color)
         if data is None:
@@ -90,40 +101,13 @@ class DatasetLoader(data.Dataset):
         data = self.imageresize(data)
 
         if self.color == 0:
-            # 灰度：(H, W) -> (1, H, W)
             img = np.expand_dims(data, axis=0)
         else:
-            # BGR -> RGB，(H, W, C) -> (C, H, W)
             img = data[:, :, ::-1].transpose((2, 0, 1))
 
         img = np.ascontiguousarray(img)
-        return img, label
+        return img, torch.tensor(labels, dtype=torch.long)  # (T,)
 
     # -------------------------------------------------------------
-    def __len__(self):
+    def __len__(self):                                       # ← 新增
         return len(self.images)
-
-
-if __name__ == '__main__':
-    yaml_path = './data/demo.yaml'   # 改成你自己的 yaml 路径
-
-    with open(yaml_path, 'r', encoding='utf-8') as f:
-        result = yaml.load(f.read(), Loader=yaml.FullLoader)
-
-    classes = result['classes']
-    color = result.get('color', 0)
-
-    dataset = DatasetLoader(result['train'], classes, [224, 224], color)
-    print(f"总样本数: {len(dataset)}")
-
-    for i in range(min(3, len(dataset))):
-        img, label = dataset[i]
-        print(f"sample {i}: path={dataset.images[i]}, "
-              f"label={label}, shape={img.shape}, dtype={img.dtype}")
-
-
-
-
-
-
-
